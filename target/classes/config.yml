@@ -1,0 +1,50 @@
+# ==========================================
+# RandomItemPVP 配置文件
+# ==========================================
+# 修改后使用指令 /ripvp reload 热加载配置
+# 新配置将在下一轮游戏开始时生效
+# ==========================================
+
+# 竞技场设置
+arena:
+  radius: 48            # 初始边界半径（格）
+  min-players: 2        # 最少玩家数才能开始
+  start-countdown: 30   # 准备倒计时（秒）
+
+# 边界设置
+border:
+  damage: 3.0                         # 穿越边界每秒扣血量（1.0 = 0.5颗心）
+  min_diameter: 10                    # 边界最小直径（格）
+  shrink_amount_per_interval: 6.0     # 每次缩圈减少的直径（格）
+  shrink_interval_ticks: 600          # 缩圈间隔（ticks，20ticks=1秒）
+  first_shrink_delay_ticks: 200       # 首次缩圈延迟（ticks）
+
+# 物品发放设置
+items:
+  interval_ticks: 100    # 物品发放间隔（ticks，100=5秒）
+  blacklist:             # 禁用的物品
+    - AIR
+    - BEDROCK
+    - BARRIER
+    - COMMAND_BLOCK
+    - CHAIN_COMMAND_BLOCK
+    - REPEATING_COMMAND_BLOCK
+    - STRUCTURE_BLOCK
+    - JIGSAW
+    - STRUCTURE_VOID
+    - DEBUG_STICK
+
+# 随机事件设置
+events:
+  delay_min_ticks: 600   # 随机事件最小延迟（ticks）
+  delay_max_ticks: 2400  # 随机事件最大延迟（ticks）
+
+# ==========================================
+# 时间换算参考：
+# 20 ticks = 1 秒
+# 100 ticks = 5 秒
+# 200 ticks = 10 秒
+# 600 ticks = 30 秒
+# 1200 ticks = 1 分钟
+# 2400 ticks = 2 分钟
+# ==========================================

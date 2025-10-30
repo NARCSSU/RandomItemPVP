@@ -1,0 +1,19 @@
+name: RandomItemPVP
+main: com.example.randomitempvp.RandomItemPVP
+version: 2.0.0
+api-version: 1.21
+authors: [Narcssu-Cursor]
+description: 随机物品PVP插件，支持缩圈、随机事件、配置热加载
+folia-supported: true
+commands:
+  ripvp:
+    description: 随机物品PVP核心命令
+    usage: /<command> <start|join|leave|stop|cancel|setspawn|status|reload>
+    permission-message: §c你没有权限使用此命令！
+permissions:
+  ripvp.use:
+    description: 允许使用基础/ripvp命令（start、join、leave、status）
+    default: true
+  ripvp.admin:
+    description: 允许使用管理/ripvp命令（stop、cancel、setspawn、reload）
+    default: op
