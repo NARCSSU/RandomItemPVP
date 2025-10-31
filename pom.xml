@@ -5,7 +5,7 @@
 
     <groupId>com.example</groupId>
     <artifactId>RandomItemPVP</artifactId>
-    <version>2.0.0</version>
+    <version>2.0.1</version>
     <name>RandomItemPVP</name>
     <description>Random item PvP mini-game for Luminol/Paper 1.21.7</description>
 

@@ -4,11 +4,13 @@ import io.papermc.paper.threadedregions.scheduler.ScheduledTask;
 import net.kyori.adventure.title.Title;
 import org.bukkit.*;
 import org.bukkit.entity.*;
+import org.bukkit.entity.Creeper;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
@@ -40,6 +42,7 @@ public class GameManager implements Listener {
     private final Map<Player, Location> playerOriginalLocations = new HashMap<>(); // 记录玩家原始位置
     private Location gatherLocation = null; // 集合点位置
     private int lastAliveCount = -1; // 记录上一次的存活人数，用于防止消息刷屏
+    private final Set<Player> alivePlayers = new HashSet<>(); // 存活玩家列表（独立跟踪，不依赖游戏模式）
 
     public GameManager(JavaPlugin plugin, ConfigManager config) {
         this.plugin = plugin;
@@ -255,27 +258,35 @@ public class GameManager implements Listener {
         
         // 恢复所有参与者的游戏模式和位置
         for (Player player : new ArrayList<>(participants)) {
-            player.getInventory().clear();
-            
-            // 恢复原始游戏模式
-            GameMode originalMode = playerGameModes.getOrDefault(player, GameMode.SURVIVAL);
-            player.setGameMode(originalMode);
-            
-            // 传送回原位置
-            Location originalLoc = playerOriginalLocations.get(player);
-            if (originalLoc != null) {
-                player.teleportAsync(originalLoc).thenRun(() -> {
-                    if (sendMessage) player.sendMessage("§c游戏已结束，已传送回原位置。");
-                });
-            } else if (spawnLocation != null) {
-                player.teleportAsync(spawnLocation).thenRun(() -> {
-                    if (sendMessage) player.sendMessage("§c游戏已结束。");
-                });
+            if (player.isOnline()) {
+                player.getInventory().clear();
+                
+                // 清除所有药水效果
+                for (org.bukkit.potion.PotionEffect effect : player.getActivePotionEffects()) {
+                    player.removePotionEffect(effect.getType());
+                }
+                
+                // 恢复原始游戏模式
+                GameMode originalMode = playerGameModes.getOrDefault(player, GameMode.SURVIVAL);
+                player.setGameMode(originalMode);
+                
+                // 传送回原位置
+                Location originalLoc = playerOriginalLocations.get(player);
+                if (originalLoc != null) {
+                    player.teleportAsync(originalLoc).thenRun(() -> {
+                        if (sendMessage) player.sendMessage("§c游戏已结束，已传送回原位置。");
+                    });
+                } else if (spawnLocation != null) {
+                    player.teleportAsync(spawnLocation).thenRun(() -> {
+                        if (sendMessage) player.sendMessage("§c游戏已结束。");
+                    });
+                }
             }
         }
         
         playerGameModes.clear();
         participants.clear(); // 清空参与者列表
+        alivePlayers.clear(); // 清空存活玩家列表
         playerOriginalLocations.clear(); // 清空原始位置记录
         gatherLocation = null; // 清空集合点
         lastAliveCount = -1; // 重置存活人数记录
@@ -285,6 +296,10 @@ public class GameManager implements Listener {
         gameRunning = true;
         eventTriggered = false;
         cancelAllTasks();
+        
+        // 初始化存活玩家列表
+        alivePlayers.clear();
+        alivePlayers.addAll(participants);
         
         // 方块操作必须在区域调度器中执行（Folia 要求）
         Bukkit.getRegionScheduler().run(plugin, spawnLocation, task -> {
@@ -478,6 +493,37 @@ public class GameManager implements Listener {
         }
         placedBlocks.clear();
         
+        // 清除流体（水和岩浆）
+        // 扫描竞技场范围内的所有流体方块
+        if (spawnLocation != null) {
+            World world = spawnLocation.getWorld();
+            int radius = config.getArenaRadius();
+            int centerX = spawnLocation.getBlockX();
+            int centerY = spawnLocation.getBlockY();
+            int centerZ = spawnLocation.getBlockZ();
+            
+            // 扫描竞技场范围（从地面到高空）
+            // 注意：范围不要太大，避免性能问题
+            int minY = Math.max(world.getMinHeight(), centerY - 64);
+            int maxY = Math.min(world.getMaxHeight(), centerY + 192);
+            
+            for (int x = centerX - radius; x <= centerX + radius; x++) {
+                for (int z = centerZ - radius; z <= centerZ + radius; z++) {
+                    for (int y = minY; y <= maxY; y++) {
+                        Location loc = new Location(world, x, y, z);
+                        Material type = loc.getBlock().getType();
+                        
+                        // 清除所有水和岩浆（包括流动的和源方块）
+                        if (type == Material.WATER || type == Material.LAVA) {
+                            loc.getBlock().setType(Material.AIR);
+                        }
+                    }
+                }
+            }
+            
+            plugin.getLogger().info("已清除竞技场范围内的所有流体方块");
+        }
+        
         // 注意：不在这里重置边界，因为 startRound() 会调用 setupWorldBorder() 重新设置
         // 只有在 stopGame() 中才需要将边界重置为超大值
     }
@@ -545,6 +591,7 @@ public class GameManager implements Listener {
             List<Player> survivors = getSurvivingPlayers();
             if (survivors.isEmpty()) return;
 
+            // 获取所有有效物品
             List<Material> validMaterials = Arrays.stream(Material.values())
                     .filter(Material::isItem)
                     .filter(m -> !config.getItemBlacklist().contains(m.name()))
@@ -553,10 +600,84 @@ public class GameManager implements Listener {
 
             for (Player player : survivors) {
                 if (validMaterials.isEmpty()) break;
-                Material randomMat = validMaterials.get(random.nextInt(validMaterials.size()));
-                player.getInventory().addItem(new ItemStack(randomMat, 1));
+                // 使用权重系统选择物品
+                Material randomMat = selectWeightedRandomItem(validMaterials);
+                ItemStack item = createItemStack(randomMat);
+                player.getInventory().addItem(item);
             }
         }, 1, intervalTicks);
+    }
+    
+    /**
+     * 创建物品堆（带特殊效果）
+     * @param material 物品类型
+     * @return 物品堆
+     */
+    private ItemStack createItemStack(Material material) {
+        ItemStack item = new ItemStack(material, 1);
+        
+        // 如果是药水，添加随机效果
+        if (material == Material.POTION || material == Material.SPLASH_POTION || material == Material.LINGERING_POTION) {
+            org.bukkit.inventory.meta.PotionMeta meta = (org.bukkit.inventory.meta.PotionMeta) item.getItemMeta();
+            if (meta != null) {
+                // 随机选择一个有用的药水效果
+                org.bukkit.potion.PotionType[] usefulPotions = {
+                    org.bukkit.potion.PotionType.STRONG_HEALING,      // 强效治疗
+                    org.bukkit.potion.PotionType.REGENERATION,        // 生命恢复
+                    org.bukkit.potion.PotionType.STRONG_STRENGTH,     // 强效力量
+                    org.bukkit.potion.PotionType.STRONG_SWIFTNESS,    // 强效速度
+                    org.bukkit.potion.PotionType.FIRE_RESISTANCE,     // 抗火
+                    org.bukkit.potion.PotionType.INVISIBILITY,        // 隐身
+                    org.bukkit.potion.PotionType.NIGHT_VISION,        // 夜视
+                    org.bukkit.potion.PotionType.STRONG_LEAPING,      // 强效跳跃
+                    org.bukkit.potion.PotionType.WATER_BREATHING,     // 水下呼吸
+                    org.bukkit.potion.PotionType.STRONG_SLOWNESS,     // 强效缓慢（攻击用）
+                    org.bukkit.potion.PotionType.STRONG_HARMING,      // 强效伤害（攻击用）
+                    org.bukkit.potion.PotionType.POISON,              // 中毒（攻击用）
+                    org.bukkit.potion.PotionType.WEAKNESS,            // 虚弱（攻击用）
+                    org.bukkit.potion.PotionType.STRONG_TURTLE_MASTER // 神龟（防御）
+                };
+                
+                org.bukkit.potion.PotionType randomPotion = usefulPotions[random.nextInt(usefulPotions.length)];
+                meta.setBasePotionType(randomPotion);
+                item.setItemMeta(meta);
+            }
+        }
+        
+        return item;
+    }
+    
+    /**
+     * 基于权重选择随机物品
+     * @param materials 可选物品列表
+     * @return 选中的物品
+     */
+    private Material selectWeightedRandomItem(List<Material> materials) {
+        if (materials.isEmpty()) return Material.STONE;
+        
+        // 获取物品权重配置
+        Map<Material, Integer> weights = config.getItemWeights();
+        
+        // 计算总权重
+        int totalWeight = 0;
+        for (Material mat : materials) {
+            totalWeight += weights.getOrDefault(mat, 1);
+        }
+        
+        // 生成随机数
+        int randomValue = random.nextInt(totalWeight);
+        
+        // 找到对应的物品
+        int currentWeight = 0;
+        for (Material mat : materials) {
+            currentWeight += weights.getOrDefault(mat, 1);
+            if (randomValue < currentWeight) {
+                return mat;
+            }
+        }
+        
+        // 默认返回第一个物品（理论上不会到达这里）
+        return materials.get(0);
     }
     
     private boolean isUsefulItem(Material material) {
@@ -638,11 +759,30 @@ public class GameManager implements Listener {
     }
 
     private void startEventTask() {
-        long delay = config.getEventDelayMin() + random.nextLong(config.getEventDelayMax() - config.getEventDelayMin() + 1);
+        scheduleNextEvent();
+    }
+    
+    /**
+     * 调度下一次随机事件
+     * 如果在最后一圈，事件频率会加快
+     */
+    private void scheduleNextEvent() {
+        if (!gameRunning) return;
+        
+        // 检查是否在最后一圈
+        boolean isFinalCircle = gameBorder != null && gameBorder.getSize() <= config.getMinBorderSize() * 1.2;
+        
+        // 根据是否在最后一圈调整延迟
+        long minDelay = isFinalCircle ? config.getEventDelayMinFinal() : config.getEventDelayMin();
+        long maxDelay = isFinalCircle ? config.getEventDelayMaxFinal() : config.getEventDelayMax();
+        
+        long delay = minDelay + random.nextLong(Math.max(1, maxDelay - minDelay + 1));
+        
         eventTask = Bukkit.getGlobalRegionScheduler().runDelayed(plugin, task -> {
-            if (!gameRunning || eventTriggered) return;
+            if (!gameRunning) return;
             triggerRandomEvent();
-            eventTriggered = true;
+            // 触发完一次后，继续调度下一次
+            scheduleNextEvent();
         }, delay);
     }
 
@@ -670,7 +810,7 @@ public class GameManager implements Listener {
     }
 
     private void triggerRandomEvent() {
-        int eventType = random.nextInt(3) + 1;
+        int eventType = random.nextInt(4) + 1; // 现在有4种事件
         List<Player> survivors = getSurvivingPlayers();
         if (survivors.isEmpty()) return;
         switch (eventType) {
@@ -718,14 +858,53 @@ public class GameManager implements Listener {
                     });
                 }
                 break;
+            case 4:
+                // 苦力怕雨事件
+                Player creeperTarget = survivors.get(random.nextInt(survivors.size()));
+                Bukkit.broadcastMessage("§c随机事件：§a§l苦力怕雨！§65只苦力怕从天而降，目标：" + creeperTarget.getName() + "！");
+                
+                // 从高空生成5只苦力怕
+                for (int i = 0; i < 5; i++) {
+                    double offsetX = random.nextDouble() * 10 - 5;
+                    double offsetZ = random.nextDouble() * 10 - 5;
+                    Location spawnLoc = creeperTarget.getLocation().add(offsetX, 30, offsetZ); // 30格高空
+                    
+                    // 使用区域调度器生成苦力怕
+                    Bukkit.getRegionScheduler().run(plugin, spawnLoc, task -> {
+                        Creeper creeper = (Creeper) creeperTarget.getWorld().spawnEntity(spawnLoc, EntityType.CREEPER);
+                        
+                        // 使用实体调度器给苦力怕添加缓降效果，防止摔死
+                        creeper.getScheduler().run(plugin, entityTask -> {
+                            creeper.addPotionEffect(new org.bukkit.potion.PotionEffect(
+                                org.bukkit.potion.PotionEffectType.SLOW_FALLING,
+                                200, // 10秒缓降
+                                0,
+                                false,
+                                false
+                            ));
+                        }, null);
+                        
+                        spawnedMobs.add(creeper);
+                        
+                        // 音效和粒子效果
+                        creeperTarget.getWorld().playSound(spawnLoc, Sound.ENTITY_CREEPER_PRIMED, 1.0f, 0.8f);
+                        creeperTarget.getWorld().spawnParticle(Particle.EXPLOSION, spawnLoc, 3, 0.5, 0.5, 0.5, 0);
+                    });
+                }
+                
+                // 给玩家额外的警告音效
+                for (Player p : survivors) {
+                    p.playSound(p.getLocation(), Sound.ENTITY_CREEPER_HURT, 1.0f, 0.5f);
+                }
+                break;
         }
     }
 
     private List<Player> getSurvivingPlayers() {
         List<Player> survivors = new ArrayList<>();
-        // 只检查参与者，不检查所有在线玩家
-        for (Player p : participants) {
-            if (p.isOnline() && p.getGameMode() == GameMode.SURVIVAL) {
+        // 使用独立的存活玩家列表，只检查是否在线
+        for (Player p : alivePlayers) {
+            if (p.isOnline()) {
                 survivors.add(p);
             }
         }
@@ -736,11 +915,23 @@ public class GameManager implements Listener {
     public void onPlayerDeath(PlayerDeathEvent event) {
         if (!gameRunning) return;
         Player player = event.getEntity();
+        
+        // 从存活玩家列表中移除
+        alivePlayers.remove(player);
+        
         event.getDrops().clear();
+        
+        // 清除死亡玩家的所有药水效果
+        for (org.bukkit.potion.PotionEffect effect : player.getActivePotionEffects()) {
+            player.removePotionEffect(effect.getType());
+        }
+        
         player.setGameMode(GameMode.SPECTATOR);
         player.sendMessage("§c你已死亡！切换为旁观者模式，等待下一轮。");
         
+        // 重新获取存活玩家列表
         List<Player> survivors = getSurvivingPlayers();
+        
         if (survivors.size() == 1) {
             Player winner = survivors.get(0);
             
@@ -774,12 +965,69 @@ public class GameManager implements Listener {
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
         if (gameRunning) {
-            player.setGameMode(GameMode.SPECTATOR);
-            if (spawnLocation != null) player.teleportAsync(spawnLocation);
-            player.getInventory().clear();
-            player.sendMessage("§e游戏正在进行中！你将以旁观者模式等待下一轮。");
+            // 检查玩家是否是存活的参与者
+            if (alivePlayers.contains(player)) {
+                // 玩家是存活参与者，恢复生存模式
+                player.setGameMode(GameMode.SURVIVAL);
+                if (spawnLocation != null) player.teleportAsync(spawnLocation);
+                player.sendMessage("§a欢迎回来！你仍在游戏中。");
+            } else if (participants.contains(player)) {
+                // 玩家是参与者但已死亡，设置为旁观者
+                player.setGameMode(GameMode.SPECTATOR);
+                if (spawnLocation != null) player.teleportAsync(spawnLocation);
+                player.getInventory().clear();
+                player.sendMessage("§c你已在游戏中死亡，以旁观者模式继续观战。");
+            } else {
+                // 玩家不是参与者，设置为旁观者
+                player.setGameMode(GameMode.SPECTATOR);
+                if (spawnLocation != null) player.teleportAsync(spawnLocation);
+                player.getInventory().clear();
+                player.sendMessage("§e游戏正在进行中！你将以旁观者模式等待下一轮。");
+            }
         } else {
             player.sendMessage("§a随机物品PVP插件已加载！输入 /ripvp start 启动游戏。");
+        }
+    }
+    
+    @EventHandler
+    public void onPlayerQuit(PlayerQuitEvent event) {
+        if (!gameRunning) return;
+        Player player = event.getPlayer();
+        
+        // 如果玩家是存活参与者，从存活列表中移除
+        if (alivePlayers.contains(player)) {
+            alivePlayers.remove(player);
+            Bukkit.broadcastMessage("§e" + player.getName() + " §c离开了游戏！");
+            
+            // 检查是否还有存活玩家
+            List<Player> survivors = getSurvivingPlayers();
+            if (survivors.size() == 1) {
+                Player winner = survivors.get(0);
+                
+                // 使用标题显示胜利消息
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.showTitle(Title.title(
+                        net.kyori.adventure.text.Component.text("§6§l游戏结束"),
+                        net.kyori.adventure.text.Component.text("§a" + winner.getName() + " §e获得胜利！")
+                    ));
+                }
+                
+                Bukkit.broadcastMessage("§6" + winner.getName() + " §e赢得了本局比赛！");
+                Bukkit.broadcastMessage("§7使用 /ripvp start 开始下一局");
+                
+                // 延迟5秒后结束游戏
+                Bukkit.getGlobalRegionScheduler().runDelayed(plugin, task -> {
+                    stopGame(false);
+                }, 100L);
+            } else if (survivors.isEmpty()) {
+                Bukkit.broadcastMessage("§c所有玩家已离开或死亡！游戏结束。");
+                Bukkit.broadcastMessage("§7使用 /ripvp start 开始下一局");
+                
+                // 延迟5秒后结束游戏
+                Bukkit.getGlobalRegionScheduler().runDelayed(plugin, task -> {
+                    stopGame(false);
+                }, 100L);
+            }
         }
     }
     

@@ -13,6 +13,8 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 
 import java.util.*;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * 空投系统 - 定时掉落稀有装备箱
@@ -23,6 +25,7 @@ public class AirdropManager implements Listener {
     private final Random random = new Random();
     private ScheduledTask airdropTask;
     private final Set<Location> airdropChests = new HashSet<>();
+    private final Map<Location, Material> originalBlocks = new HashMap<>(); // 保存被信标替换的原始方块
     
     // 空投配置（快节奏）
     private static final long AIRDROP_INTERVAL_TICKS = 800L; // 40秒一次空投（加快）
@@ -110,6 +113,11 @@ public class AirdropManager implements Listener {
         
         // 在空中显示信标光束效果
         Location beaconBase = location.clone().subtract(0, 1, 0);
+        
+        // 保存信标底座位置的原始方块
+        Material originalBlock = beaconBase.getBlock().getType();
+        originalBlocks.put(beaconBase, originalBlock);
+        
         beaconBase.getBlock().setType(Material.BEACON);
         location.getBlock().setType(Material.CHEST);
         
@@ -188,10 +196,11 @@ public class AirdropManager implements Listener {
                     if (loc.getBlock().getType() == Material.CHEST) {
                         loc.getBlock().setType(Material.AIR);
                     }
-                    // 清除信标底座
+                    // 恢复信标底座的原始方块
                     Location below = loc.clone().subtract(0, 1, 0);
                     if (below.getBlock().getType() == Material.BEACON) {
-                        below.getBlock().setType(Material.AIR);
+                        Material original = originalBlocks.getOrDefault(below, Material.AIR);
+                        below.getBlock().setType(original);
                     }
                 });
             } else {
@@ -199,14 +208,16 @@ public class AirdropManager implements Listener {
                 if (loc.getBlock().getType() == Material.CHEST) {
                     loc.getBlock().setType(Material.AIR);
                 }
-                // 清除信标底座
+                // 恢复信标底座的原始方块
                 Location below = loc.clone().subtract(0, 1, 0);
                 if (below.getBlock().getType() == Material.BEACON) {
-                    below.getBlock().setType(Material.AIR);
+                    Material original = originalBlocks.getOrDefault(below, Material.AIR);
+                    below.getBlock().setType(original);
                 }
             }
         }
         airdropChests.clear();
+        originalBlocks.clear(); // 清除原始方块记录
     }
     
     @EventHandler

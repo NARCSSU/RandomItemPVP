@@ -22,6 +22,108 @@ border:
 # 物品发放设置
 items:
   interval_ticks: 100    # 物品发放间隔（ticks，100=5秒）
+  
+  # ==========================================
+  # 物品权重配置（权重越高出现概率越大，未配置的物品默认权重为1）
+  # ==========================================
+  # 工作原理：
+  #   - 权重为10的物品出现概率是权重为1的物品的10倍
+  #   - 所有物品的权重加起来形成一个"池子"，每个物品占据对应的比例
+  #   - 即使某个物品权重很高，其他物品仍会出现，只是概率较低
+  #
+  # 示例计算：
+  #   假设只有3个物品：A(权重100)、B(权重10)、C(权重1)
+  #   总权重 = 111
+  #   A的概率 = 100/111 = 90.1%
+  #   B的概率 = 10/111 = 9.0%
+  #   C的概率 = 1/111 = 0.9%
+  #
+  # 建议权重范围：1-20（避免差距过大影响游戏体验）
+  # ==========================================
+  weights:
+    # ==========================================
+    # 核心战斗物品 - 极高权重
+    # ==========================================
+    
+    # 武器（权重 30-50）
+    DIAMOND_SWORD: 45            # 钻石剑
+    DIAMOND_AXE: 40              # 钻石斧
+    IRON_SWORD: 50               # 铁剑（最常见）
+    IRON_AXE: 45                 # 铁斧
+    BOW: 50                      # 弓（超常见）
+    CROSSBOW: 40                 # 弩
+    ARROW: 60                    # 箭（大量）
+    SPECTRAL_ARROW: 30           # 光灵箭
+    
+    # 工具（权重 35-45）
+    DIAMOND_PICKAXE: 40          # 钻石镐
+    IRON_PICKAXE: 45             # 铁镐
+    DIAMOND_AXE: 40              # 钻石斧（工具）
+    IRON_AXE: 45                 # 铁斧（工具）
+    DIAMOND_SHOVEL: 35           # 钻石锹
+    IRON_SHOVEL: 40              # 铁锹
+    
+    # 装备（权重 30-40）
+    DIAMOND_HELMET: 35           # 钻石头盔
+    DIAMOND_CHESTPLATE: 35       # 钻石胸甲
+    DIAMOND_LEGGINGS: 35         # 钻石护腿
+    DIAMOND_BOOTS: 35            # 钻石靴子
+    IRON_HELMET: 40              # 铁头盔
+    IRON_CHESTPLATE: 40          # 铁胸甲
+    IRON_LEGGINGS: 40            # 铁护腿
+    IRON_BOOTS: 40               # 铁靴子
+    SHIELD: 50                   # 盾牌（超常见）
+    
+    # 方块（权重 40-60）
+    COBBLESTONE: 60              # 圆石（搭建）
+    STONE: 55                    # 石头（搭建）
+    DIRT: 55                     # 泥土（搭建）
+    OAK_PLANKS: 50               # 橡木板（搭建）
+    OAK_LOG: 45                  # 橡木原木
+    OBSIDIAN: 35                 # 黑曜石
+    GLASS: 40                    # 玻璃
+    
+    # 药水（权重 25-40）
+    POTION: 40                   # 药水
+    SPLASH_POTION: 35            # 喷溅药水
+    LINGERING_POTION: 30         # 滞留药水
+    GOLDEN_APPLE: 45             # 金苹果（超常见）
+    ENCHANTED_GOLDEN_APPLE: 10   # 附魔金苹果
+    
+    # 爆炸物（权重 25-35）
+    TNT: 35                      # TNT
+    FIRE_CHARGE: 40              # 火焰弹
+    END_CRYSTAL: 25              # 末影水晶
+    
+    # 实用消耗品（权重 30-45）
+    ENDER_PEARL: 40              # 末影珍珠
+    SNOWBALL: 45                 # 雪球
+    EGG: 45                      # 鸡蛋
+    FISHING_ROD: 35              # 鱼竿
+    FLINT_AND_STEEL: 35          # 打火石
+    WATER_BUCKET: 40             # 水桶
+    LAVA_BUCKET: 30              # 熔岩桶
+    
+    # ==========================================
+    # 稀有物品 - 低权重（保持稀有性）
+    # ==========================================
+    TOTEM_OF_UNDYING: 3          # 图腾
+    NETHERITE_INGOT: 5           # 下界合金锭
+    ELYTRA: 2                    # 鞘翅
+    TRIDENT: 5                   # 三叉戟
+    NETHER_STAR: 2               # 下界之星
+    
+    # ==========================================
+    # 杂物 - 极低权重（几乎不出现）
+    # ==========================================
+    STICK: 1                     # 木棍（杂物）
+    STRING: 1                    # 线（杂物）
+    LEATHER: 1                   # 皮革（杂物）
+    FEATHER: 1                   # 羽毛（杂物）
+    BONE: 1                      # 骨头（杂物）
+    ROTTEN_FLESH: 1              # 腐肉（杂物）
+    SPIDER_EYE: 1                # 蜘蛛眼（杂物）
+    
   blacklist:             # 禁用的物品
     - AIR
     - BEDROCK
@@ -36,8 +138,11 @@ items:
 
 # 随机事件设置
 events:
-  delay_min_ticks: 600   # 随机事件最小延迟（ticks）
-  delay_max_ticks: 2400  # 随机事件最大延迟（ticks）
+  delay_min_ticks: 600   # 随机事件最小延迟（ticks，正常情况）
+  delay_max_ticks: 2400  # 随机事件最大延迟（ticks，正常情况）
+  delay_min_ticks_final_circle: 200  # 最后一圈最小延迟（ticks，加快频率）
+  delay_max_ticks_final_circle: 600  # 最后一圈最大延迟（ticks，加快频率）
+  # 说明：当边界缩小到接近最小值时，事件会更频繁触发，增加紧张感
 
 # ==========================================
 # 时间换算参考：

@@ -1,6 +1,6 @@
 name: RandomItemPVP
 main: com.example.randomitempvp.RandomItemPVP
-version: 2.0.0
+version: 2.0.1
 api-version: 1.21
 authors: [Narcssu-Cursor]
 description: 随机物品PVP插件，支持缩圈、随机事件、配置热加载
