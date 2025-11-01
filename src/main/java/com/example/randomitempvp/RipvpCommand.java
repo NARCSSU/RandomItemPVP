@@ -44,6 +44,10 @@ public class RipvpCommand implements CommandExecutor, TabCompleter {
             switch (args[0].toLowerCase()) {
                 case "start":
                     if (player == null) return true;
+                    if (!player.hasPermission("ripvp.use")) {
+                        player.sendMessage(ChatColor.RED + "你没有权限使用此命令！");
+                        return true;
+                    }
                     if (gameManager.isRunning()) {
                         player.sendMessage(ChatColor.RED + "游戏已在运行中！");
                         return true;
@@ -82,7 +86,14 @@ public class RipvpCommand implements CommandExecutor, TabCompleter {
                         return true;
                     }
                     gameManager.setSpawnLocation(player.getLocation());
-                    player.sendMessage(ChatColor.GREEN + "出生点已设置为当前位置！");
+                    player.sendMessage(ChatColor.GREEN + "✓ 游戏出生点已设置为当前位置！");
+                    player.sendMessage(ChatColor.GREEN + "✓ 已保存到配置文件，重启后不会丢失！");
+                    player.sendMessage(ChatColor.YELLOW + "位置：" + 
+                        String.format("世界=%s, X=%.1f, Y=%.1f, Z=%.1f", 
+                        player.getWorld().getName(),
+                        player.getLocation().getX(),
+                        player.getLocation().getY(),
+                        player.getLocation().getZ()));
                     return true;
 
                 case "status":
@@ -114,12 +125,18 @@ public class RipvpCommand implements CommandExecutor, TabCompleter {
                     
                     // 热加载配置
                     configManager.reloadConfig();
+                    gameManager.reloadSpawnLocation();
                     player.sendMessage(ChatColor.GREEN + "✓ 配置文件已热加载！");
+                    player.sendMessage(ChatColor.GREEN + "✓ 游戏出生点已重新加载！");
                     player.sendMessage(ChatColor.YELLOW + "新配置已生效，可以开始新游戏。");
                     return true;
                 
                 case "join":
                     if (player == null) return true;
+                    if (!player.hasPermission("ripvp.use")) {
+                        player.sendMessage(ChatColor.RED + "你没有权限使用此命令！");
+                        return true;
+                    }
                     if (gameManager.isRunning()) {
                         player.sendMessage(ChatColor.RED + "游戏已经开始，无法加入！");
                         return true;
@@ -139,6 +156,10 @@ public class RipvpCommand implements CommandExecutor, TabCompleter {
                 
                 case "leave":
                     if (player == null) return true;
+                    if (!player.hasPermission("ripvp.use")) {
+                        player.sendMessage(ChatColor.RED + "你没有权限使用此命令！");
+                        return true;
+                    }
                     if (gameManager.isRunning()) {
                         player.sendMessage(ChatColor.RED + "游戏已经开始，无法退出！");
                         return true;

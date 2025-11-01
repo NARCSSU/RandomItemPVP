@@ -9,8 +9,10 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerBucketEmptyEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
+import org.bukkit.event.player.PlayerRespawnEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.util.Vector;
@@ -35,6 +37,7 @@ public class GameManager implements Listener {
     private WorldBorder gameBorder;
     private final List<Location> bedrockPillars = new ArrayList<>();
     private final List<Location> placedBlocks = new ArrayList<>();
+    private final List<Location> placedFluids = new ArrayList<>(); // 记录玩家放置的流体
     private final List<Entity> spawnedMobs = new ArrayList<>();
     private final Map<Player, GameMode> playerGameModes = new HashMap<>();
     private ScheduledTask aliveCountTask;
@@ -47,15 +50,32 @@ public class GameManager implements Listener {
     public GameManager(JavaPlugin plugin, ConfigManager config) {
         this.plugin = plugin;
         this.config = config;
-        if (!Bukkit.getWorlds().isEmpty()) {
+        
+        // 从配置文件加载游戏出生点
+        spawnLocation = config.loadSpawnLocation();
+        
+        // 如果配置文件中没有，使用主世界出生点作为默认值
+        if (spawnLocation == null && !Bukkit.getWorlds().isEmpty()) {
             spawnLocation = Bukkit.getWorlds().get(0).getSpawnLocation();
+            plugin.getLogger().warning("配置文件中未找到游戏出生点，使用主世界出生点作为默认值");
+            plugin.getLogger().warning("请使用 /ripvp setspawn 设置游戏出生点");
         }
     }
 
     public boolean isRunning() { return gameRunning; }
     public boolean isPreparing() { return preparing; }
     public int getAliveCount() { return getSurvivingPlayers().size(); }
-    public void setSpawnLocation(Location location) { this.spawnLocation = location; }
+    public void setSpawnLocation(Location location) { 
+        this.spawnLocation = location;
+        // 保存到配置文件
+        config.saveSpawnLocation(location);
+    }
+    public void reloadSpawnLocation() {
+        Location newSpawn = config.loadSpawnLocation();
+        if (newSpawn != null) {
+            this.spawnLocation = newSpawn;
+        }
+    }
     public int getParticipantCount() { return participants.size(); }
     public Set<Player> getParticipants() { return new HashSet<>(participants); }
     
@@ -192,14 +212,26 @@ public class GameManager implements Listener {
                 return;
             }
             
-            // 显示倒计时
+            // 显示倒计时（所有玩家都能看到）
             if (remaining <= 3) {
-                // 最后3秒特殊提示
+                // 最后3秒：超大标题 + 强音效
                 for (Player p : Bukkit.getOnlinePlayers()) {
                     p.sendTitle("§6§l" + remaining, "§e游戏即将开始", 0, 20, 10);
                     p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 1.0f, 1.5f);
                 }
+                Bukkit.broadcastMessage("§e游戏将在 §6" + remaining + " §e秒后开始... (参与者：§6" + participants.size() + "§e人)");
+            } else if (remaining <= 10) {
+                // 10秒内：标题 + 音效
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.sendTitle("§e" + remaining, "§7游戏准备中... (参与者：§6" + participants.size() + "§7人)", 0, 25, 10);
+                    p.playSound(p.getLocation(), Sound.BLOCK_NOTE_BLOCK_HARP, 0.8f, 1.0f);
+                }
+                Bukkit.broadcastMessage("§e游戏将在 §6" + remaining + " §e秒后开始... (参与者：§6" + participants.size() + "§e人)");
             } else {
+                // 10秒以上：标题（较小） + 聊天消息
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.sendTitle("", "§7游戏将在 §e" + remaining + "§7 秒后开始 (参与者：§6" + participants.size() + "§7人)", 5, 20, 5);
+                }
                 Bukkit.broadcastMessage("§e游戏将在 §6" + remaining + " §e秒后开始... (参与者：§6" + participants.size() + "§e人)");
             }
             
@@ -297,9 +329,13 @@ public class GameManager implements Listener {
         eventTriggered = false;
         cancelAllTasks();
         
-        // 初始化存活玩家列表
+        // 初始化存活玩家列表（只添加在线的参与者）
         alivePlayers.clear();
-        alivePlayers.addAll(participants);
+        for (Player player : participants) {
+            if (player.isOnline()) {
+                alivePlayers.add(player);
+            }
+        }
         
         // 方块操作必须在区域调度器中执行（Folia 要求）
         Bukkit.getRegionScheduler().run(plugin, spawnLocation, task -> {
@@ -321,7 +357,7 @@ public class GameManager implements Listener {
         }
         
         Bukkit.broadcastMessage("§a新一轮随机物品PVP开始！");
-        Bukkit.broadcastMessage("§e击杀敌人可获得丰厚奖励！连杀有特殊称号！");
+        Bukkit.broadcastMessage("§e击杀敌人可获得回血和随机物品奖励！");
         Bukkit.broadcastMessage("§6空投系统已激活，稀有装备即将空降！");
         
         // 启动存活人数显示
@@ -426,6 +462,11 @@ public class GameManager implements Listener {
         for (int i = 0; i < playerCount; i++) {
             Player player = players.get(i);
             
+            // 检查玩家是否在线
+            if (!player.isOnline()) {
+                continue;
+            }
+            
             // 计算该玩家的位置（围绕竞技场中心圆形分布）
             double angle = i * angleStep;
             int pillarX = spawnLocation.getBlockX() + (int)(Math.cos(angle) * circleRadius);
@@ -474,6 +515,14 @@ public class GameManager implements Listener {
     }
 
     private void destroyArena() {
+        // 如果插件已禁用（服务器关闭），跳过竞技场清理
+        // 服务器关闭时世界数据已卸载，访问方块会导致空指针异常
+        if (!plugin.isEnabled()) {
+            bedrockPillars.clear();
+            placedBlocks.clear();
+            return;
+        }
+        
         // 清除基岩柱子和平台（包括基岩和玻璃）
         for (Location loc : bedrockPillars) {
             if (loc.getWorld() != null) {
@@ -493,36 +542,18 @@ public class GameManager implements Listener {
         }
         placedBlocks.clear();
         
-        // 清除流体（水和岩浆）
-        // 扫描竞技场范围内的所有流体方块
-        if (spawnLocation != null) {
-            World world = spawnLocation.getWorld();
-            int radius = config.getArenaRadius();
-            int centerX = spawnLocation.getBlockX();
-            int centerY = spawnLocation.getBlockY();
-            int centerZ = spawnLocation.getBlockZ();
-            
-            // 扫描竞技场范围（从地面到高空）
-            // 注意：范围不要太大，避免性能问题
-            int minY = Math.max(world.getMinHeight(), centerY - 64);
-            int maxY = Math.min(world.getMaxHeight(), centerY + 192);
-            
-            for (int x = centerX - radius; x <= centerX + radius; x++) {
-                for (int z = centerZ - radius; z <= centerZ + radius; z++) {
-                    for (int y = minY; y <= maxY; y++) {
-                        Location loc = new Location(world, x, y, z);
-                        Material type = loc.getBlock().getType();
-                        
-                        // 清除所有水和岩浆（包括流动的和源方块）
-                        if (type == Material.WATER || type == Material.LAVA) {
-                            loc.getBlock().setType(Material.AIR);
-                        }
-                    }
+        // 清除玩家放置的流体（水和岩浆）
+        // 只清除记录的流体方块，避免全局扫描造成卡顿
+        for (Location loc : placedFluids) {
+            if (loc.getWorld() != null) {
+                Material type = loc.getBlock().getType();
+                // 清除水和岩浆（包括流动的和源方块）
+                if (type == Material.WATER || type == Material.LAVA) {
+                    loc.getBlock().setType(Material.AIR);
                 }
             }
-            
-            plugin.getLogger().info("已清除竞技场范围内的所有流体方块");
         }
+        placedFluids.clear();
         
         // 注意：不在这里重置边界，因为 startRound() 会调用 setupWorldBorder() 重新设置
         // 只有在 stopGame() 中才需要将边界重置为超大值
@@ -568,6 +599,11 @@ public class GameManager implements Listener {
 
     private void resetPlayers() {
         for (Player player : participants) {
+            // 检查玩家是否在线
+            if (!player.isOnline()) {
+                continue;
+            }
+            
             // 保存原始游戏模式
             playerGameModes.put(player, player.getGameMode());
             
@@ -810,12 +846,19 @@ public class GameManager implements Listener {
     }
 
     private void triggerRandomEvent() {
-        int eventType = random.nextInt(4) + 1; // 现在有4种事件
+        int eventType = random.nextInt(6) + 1; // 现在有6种事件
         List<Player> survivors = getSurvivingPlayers();
         if (survivors.isEmpty()) return;
         switch (eventType) {
             case 1:
-                Bukkit.broadcastMessage("§c随机事件：§6天空下起箭雨！");
+                // 箭雨事件
+                // 显示标题
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.showTitle(Title.title(
+                        net.kyori.adventure.text.Component.text("§c随机事件"),
+                        net.kyori.adventure.text.Component.text("§6天空下起箭雨！")
+                    ));
+                }
                 final int[] count = {0};
                 Bukkit.getGlobalRegionScheduler().runAtFixedRate(plugin, task -> {
                     if (count[0] >= 20 || !gameRunning) { 
@@ -825,12 +868,17 @@ public class GameManager implements Listener {
                     List<Player> currentSurvivors = getSurvivingPlayers();
                     for (Player p : currentSurvivors) {
                         World world = p.getWorld();
+                        // 为每个玩家生成箭
                         for (int i = 0; i < 5; i++) {
                             double ox = random.nextDouble() * 10 - 5;
                             double oz = random.nextDouble() * 10 - 5;
                             Location spawnLoc = p.getLocation().add(ox, 25, oz);
-                            Arrow arrow = world.spawnArrow(spawnLoc, new Vector(0, -1, 0), 1, 0);
-                            arrow.setDamage(2.0);
+                            
+                            // 使用区域调度器生成箭（Folia 要求）
+                            Bukkit.getRegionScheduler().run(plugin, spawnLoc, regionTask -> {
+                                Arrow arrow = world.spawnArrow(spawnLoc, new Vector(0, -1, 0), 1, 0);
+                                arrow.setDamage(2.0);
+                            });
                         }
                     }
                     count[0]++;
@@ -838,7 +886,13 @@ public class GameManager implements Listener {
                 break;
             case 2:
                 Player ghastTarget = survivors.get(random.nextInt(survivors.size()));
-                Bukkit.broadcastMessage("§c随机事件：§6一只恶魂在" + ghastTarget.getName() + "附近生成！");
+                // 显示标题
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.showTitle(Title.title(
+                        net.kyori.adventure.text.Component.text("§c随机事件"),
+                        net.kyori.adventure.text.Component.text("§6恶魂在 " + ghastTarget.getName() + " 附近！")
+                    ));
+                }
                 // 实体生成必须在区域调度器中执行（Folia 要求）
                 Location ghastLoc = ghastTarget.getLocation().add(random.nextInt(10) - 5, 5, random.nextInt(10) - 5);
                 Bukkit.getRegionScheduler().run(plugin, ghastLoc, task -> {
@@ -848,7 +902,13 @@ public class GameManager implements Listener {
                 break;
             case 3:
                 Player zombieTarget = survivors.get(random.nextInt(survivors.size()));
-                Bukkit.broadcastMessage("§c随机事件：§63只僵尸在" + zombieTarget.getName() + "附近生成！");
+                // 显示标题
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.showTitle(Title.title(
+                        net.kyori.adventure.text.Component.text("§c随机事件"),
+                        net.kyori.adventure.text.Component.text("§6僵尸围攻 " + zombieTarget.getName() + "！")
+                    ));
+                }
                 // 实体生成必须在区域调度器中执行（Folia 要求）
                 for (int i = 0; i < 3; i++) {
                     Location zombieLoc = zombieTarget.getLocation().add(random.nextInt(10) - 5, 0, random.nextInt(10) - 5);
@@ -861,7 +921,13 @@ public class GameManager implements Listener {
             case 4:
                 // 苦力怕雨事件
                 Player creeperTarget = survivors.get(random.nextInt(survivors.size()));
-                Bukkit.broadcastMessage("§c随机事件：§a§l苦力怕雨！§65只苦力怕从天而降，目标：" + creeperTarget.getName() + "！");
+                // 显示标题
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.showTitle(Title.title(
+                        net.kyori.adventure.text.Component.text("§a§l苦力怕雨"),
+                        net.kyori.adventure.text.Component.text("§6目标：" + creeperTarget.getName() + "！")
+                    ));
+                }
                 
                 // 从高空生成5只苦力怕
                 for (int i = 0; i < 5; i++) {
@@ -896,6 +962,109 @@ public class GameManager implements Listener {
                 for (Player p : survivors) {
                     p.playSound(p.getLocation(), Sound.ENTITY_CREEPER_HURT, 1.0f, 0.5f);
                 }
+                break;
+            case 5:
+                // 重力反转事件
+                // 显示标题
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.showTitle(Title.title(
+                        net.kyori.adventure.text.Component.text("§d§l重力反转"),
+                        net.kyori.adventure.text.Component.text("§b所有人漂浮了！")
+                    ));
+                }
+                
+                // 给所有存活玩家添加漂浮和缓降效果
+                int levitationDuration = 400; // 漂浮20秒（400 ticks）
+                int slowFallingDuration = 600; // 缓降30秒（600 ticks），确保玩家安全落地
+                
+                for (Player p : survivors) {
+                    // 使用实体调度器给玩家添加药水效果（Folia 要求）
+                    p.getScheduler().run(plugin, task -> {
+                        // 漂浮效果 I - 玩家会缓慢向上飘20秒
+                        p.addPotionEffect(new org.bukkit.potion.PotionEffect(
+                            org.bukkit.potion.PotionEffectType.LEVITATION,
+                            levitationDuration, // 20秒漂浮
+                            0, // 等级 I（降低等级，缓慢上升）
+                            false,
+                            true
+                        ));
+                        
+                        // 缓降效果 - 30秒，确保玩家有足够时间安全降落
+                        p.addPotionEffect(new org.bukkit.potion.PotionEffect(
+                            org.bukkit.potion.PotionEffectType.SLOW_FALLING,
+                            slowFallingDuration, // 30秒缓降
+                            0,
+                            false,
+                            true
+                        ));
+                        
+                        // 粒子效果
+                        p.getWorld().spawnParticle(Particle.PORTAL, p.getLocation(), 50, 0.5, 1, 0.5, 0.5);
+                        p.getWorld().spawnParticle(Particle.END_ROD, p.getLocation(), 30, 0.3, 0.5, 0.3, 0.1);
+                        
+                        // 音效
+                        p.playSound(p.getLocation(), Sound.ENTITY_ENDERMAN_TELEPORT, 1.0f, 1.5f);
+                        p.playSound(p.getLocation(), Sound.BLOCK_BEACON_ACTIVATE, 0.8f, 1.8f);
+                    }, null);
+                }
+                
+                // 全服播放特殊音效
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.playSound(p.getLocation(), Sound.ENTITY_WITHER_SPAWN, 0.5f, 2.0f);
+                }
+                break;
+            case 6:
+                // 闪电风暴事件
+                Player lightningTarget = survivors.get(random.nextInt(survivors.size()));
+                
+                // 显示标题
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.showTitle(Title.title(
+                        net.kyori.adventure.text.Component.text("§b⚡ 闪电风暴"),
+                        net.kyori.adventure.text.Component.text("§e目标：" + lightningTarget.getName())
+                    ));
+                }
+                
+                // 给所有玩家播放雷声
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.playSound(p.getLocation(), Sound.ENTITY_LIGHTNING_BOLT_THUNDER, 1.0f, 0.8f);
+                }
+                
+                // 依次劈下5道闪电，间隔0.3秒（6 ticks）
+                final int[] lightningCount = {0};
+                final int totalLightning = 5;
+                final Location targetLoc = lightningTarget.getLocation();
+                
+                Bukkit.getGlobalRegionScheduler().runAtFixedRate(plugin, task -> {
+                    if (lightningCount[0] >= totalLightning || !gameRunning) {
+                        task.cancel();
+                        return;
+                    }
+                    
+                    // 在目标玩家周围10格范围内随机位置劈闪电
+                    double offsetX = (random.nextDouble() - 0.5) * 20; // -10 到 +10
+                    double offsetZ = (random.nextDouble() - 0.5) * 20; // -10 到 +10
+                    int strikeX = targetLoc.getBlockX() + (int)offsetX;
+                    int strikeZ = targetLoc.getBlockZ() + (int)offsetZ;
+                    World world = targetLoc.getWorld();
+                    
+                    // 使用区域调度器劈闪电（Folia要求）
+                    Location tempLoc = new Location(world, strikeX, 64, strikeZ);
+                    Bukkit.getRegionScheduler().run(plugin, tempLoc, regionTask -> {
+                        // 获取该位置的最高方块Y坐标（闪电从天空劈下）
+                        int y = world.getHighestBlockYAt(strikeX, strikeZ) + 1;
+                        Location strikeLoc = new Location(world, strikeX, y, strikeZ);
+                        
+                        // 劈闪电
+                        world.strikeLightning(strikeLoc);
+                        
+                        // 粒子效果
+                        world.spawnParticle(Particle.ELECTRIC_SPARK, strikeLoc.clone().add(0, 1, 0), 30, 0.5, 1, 0.5, 0.1);
+                    });
+                    
+                    lightningCount[0]++;
+                }, 1, 6); // 初始延迟1 tick，每6 ticks（0.3秒）执行一次
+                
                 break;
         }
     }
@@ -1032,9 +1201,92 @@ public class GameManager implements Listener {
     }
     
     @EventHandler
-    public void onBlockPlace(BlockPlaceEvent event) {
+    public void onPlayerRespawn(PlayerRespawnEvent event) {
         if (!gameRunning) return;
-        // 记录玩家放置的方块位置
-        placedBlocks.add(event.getBlock().getLocation());
+        Player player = event.getPlayer();
+        
+        // 检查玩家是否是参与者
+        if (participants.contains(player)) {
+            // 检查玩家是否还在存活列表中
+            if (!alivePlayers.contains(player)) {
+                // 玩家已死亡，使用实体调度器强制设置为旁观者模式
+                player.getScheduler().run(plugin, task -> {
+                    player.setGameMode(GameMode.SPECTATOR);
+                    player.sendMessage("§c你已死亡！切换为旁观者模式，等待下一轮。");
+                    
+                    // 传送到出生点
+                    if (spawnLocation != null) {
+                        player.teleportAsync(spawnLocation);
+                    }
+                }, null);
+            }
+        }
+    }
+    
+    @EventHandler
+    public void onBlockPlace(BlockPlaceEvent event) {
+        Player player = event.getPlayer();
+        
+        if (!gameRunning) {
+            // 游戏未运行时，允许所有玩家放置方块（不干预）
+            return;
+        }
+        
+        // 游戏运行时，检查玩家是否是存活的参与者
+        if (!alivePlayers.contains(player)) {
+            // 不是存活参与者，阻止放置方块
+            event.setCancelled(true);
+            player.sendActionBar(net.kyori.adventure.text.Component.text("§c你无法放置方块！（已死亡或未参与游戏）"));
+            return;
+        }
+        
+        // 是存活参与者，记录玩家放置的方块位置
+        Location blockLoc = event.getBlock().getLocation();
+        Material blockType = event.getBlock().getType();
+        
+        // 如果是流体方块，额外记录到流体列表
+        if (blockType == Material.WATER || blockType == Material.LAVA) {
+            placedFluids.add(blockLoc);
+            // 同时记录周围可能扩散的流体位置（3x3范围）
+            for (int x = -2; x <= 2; x++) {
+                for (int z = -2; z <= 2; z++) {
+                    for (int y = -1; y <= 1; y++) {
+                        Location fluidLoc = blockLoc.clone().add(x, y, z);
+                        placedFluids.add(fluidLoc);
+                    }
+                }
+            }
+        }
+        
+        placedBlocks.add(blockLoc);
+    }
+    
+    @EventHandler
+    public void onBucketEmpty(PlayerBucketEmptyEvent event) {
+        if (!gameRunning) return;
+        
+        Player player = event.getPlayer();
+        
+        // 检查玩家是否是存活的参与者
+        if (!alivePlayers.contains(player)) {
+            event.setCancelled(true);
+            player.sendActionBar(net.kyori.adventure.text.Component.text("§c你无法使用桶！（已死亡或未参与游戏）"));
+            return;
+        }
+        
+        // 记录水或岩浆的位置
+        Location bucketLoc = event.getBlock().getLocation();
+        placedFluids.add(bucketLoc);
+        
+        // 记录周围可能扩散的流体位置（5x5x3范围，水/岩浆会扩散）
+        for (int x = -3; x <= 3; x++) {
+            for (int z = -3; z <= 3; z++) {
+                for (int y = -1; y <= 1; y++) {
+                    Location fluidLoc = bucketLoc.clone().add(x, y, z);
+                    placedFluids.add(fluidLoc);
+                }
+            }
+        }
     }
 }
+

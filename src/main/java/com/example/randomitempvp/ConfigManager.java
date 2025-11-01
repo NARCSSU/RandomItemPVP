@@ -1,6 +1,9 @@
 package com.example.randomitempvp;
 
+import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
+import org.bukkit.World;
 import org.bukkit.configuration.ConfigurationSection;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -76,6 +79,60 @@ public class ConfigManager {
      */
     public int getItemWeight(Material material) {
         return getItemWeights().getOrDefault(material, 1);
+    }
+    
+    /**
+     * 保存游戏出生点到配置文件
+     * @param location 出生点位置
+     */
+    public void saveSpawnLocation(Location location) {
+        if (location == null) return;
+        
+        config.set("arena.spawn.world", location.getWorld().getName());
+        config.set("arena.spawn.x", location.getX());
+        config.set("arena.spawn.y", location.getY());
+        config.set("arena.spawn.z", location.getZ());
+        config.set("arena.spawn.yaw", location.getYaw());
+        config.set("arena.spawn.pitch", location.getPitch());
+        
+        plugin.saveConfig();
+        plugin.getLogger().info("游戏出生点已保存到配置文件：" + 
+            String.format("世界=%s, 坐标=(%.1f, %.1f, %.1f)", 
+            location.getWorld().getName(), 
+            location.getX(), 
+            location.getY(), 
+            location.getZ()));
+    }
+    
+    /**
+     * 从配置文件加载游戏出生点
+     * @return 出生点位置，如果未配置或世界不存在则返回null
+     */
+    public Location loadSpawnLocation() {
+        if (!config.contains("arena.spawn.world")) {
+            return null;
+        }
+        
+        String worldName = config.getString("arena.spawn.world");
+        World world = Bukkit.getWorld(worldName);
+        
+        if (world == null) {
+            plugin.getLogger().warning("配置文件中的世界 '" + worldName + "' 不存在！");
+            return null;
+        }
+        
+        double x = config.getDouble("arena.spawn.x", 0.0);
+        double y = config.getDouble("arena.spawn.y", 64.0);
+        double z = config.getDouble("arena.spawn.z", 0.0);
+        float yaw = (float) config.getDouble("arena.spawn.yaw", 0.0);
+        float pitch = (float) config.getDouble("arena.spawn.pitch", 0.0);
+        
+        Location location = new Location(world, x, y, z, yaw, pitch);
+        plugin.getLogger().info("从配置文件加载游戏出生点：" + 
+            String.format("世界=%s, 坐标=(%.1f, %.1f, %.1f)", 
+            worldName, x, y, z));
+        
+        return location;
     }
 }
 

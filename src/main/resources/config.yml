@@ -10,6 +10,15 @@ arena:
   radius: 48            # 初始边界半径（格）
   min-players: 2        # 最少玩家数才能开始
   start-countdown: 30   # 准备倒计时（秒）
+  
+  # 游戏出生点（使用 /ripvp setspawn 设置）
+  spawn:
+    world: 'world'      # 世界名
+    x: 0.0              # X坐标
+    y: 64.0             # Y坐标
+    z: 0.0              # Z坐标
+    yaw: 0.0            # 视角偏航角
+    pitch: 0.0          # 视角俯仰角
 
 # 边界设置
 border:

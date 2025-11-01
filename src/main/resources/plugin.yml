@@ -1,9 +1,9 @@
 name: RandomItemPVP
 main: com.example.randomitempvp.RandomItemPVP
-version: 2.0.1
+version: 2.1.0
 api-version: 1.21
 authors: [Narcssu-Cursor]
-description: 随机物品PVP插件，支持缩圈、随机事件、配置热加载
+description: 随机物品PVP插件，支持缩圈、随机事件、配置热加载、出生点持久化
 folia-supported: true
 commands:
   ripvp:

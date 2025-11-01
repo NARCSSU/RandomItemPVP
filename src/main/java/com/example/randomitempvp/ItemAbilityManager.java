@@ -8,6 +8,7 @@ import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -233,6 +234,71 @@ public class ItemAbilityManager implements Listener {
         // 视觉效果
         player.getWorld().spawnParticle(Particle.FLAME, spawnLoc, 15, 0.1, 0.1, 0.1, 0.05);
         player.getWorld().spawnParticle(Particle.LAVA, spawnLoc, 5, 0.1, 0.1, 0.1, 0.0);
+    }
+    
+    /**
+     * 监听雪球命中事件 - 冰冻爆破效果
+     */
+    @EventHandler
+    public void onSnowballHit(ProjectileHitEvent event) {
+        if (!gameManager.isRunning()) return;
+        
+        // 检查是否是雪球
+        if (!(event.getEntity() instanceof Snowball)) return;
+        
+        Snowball snowball = (Snowball) event.getEntity();
+        
+        // 检查投掷者是否是玩家
+        if (!(snowball.getShooter() instanceof Player)) return;
+        
+        Player thrower = (Player) snowball.getShooter();
+        Location hitLocation = snowball.getLocation();
+        World world = hitLocation.getWorld();
+        
+        // 冰冻效果范围：3格半径
+        double radius = 3.0;
+        
+        // 粒子效果 - 冰冻爆炸
+        world.spawnParticle(Particle.SNOWFLAKE, hitLocation, 50, radius, radius, radius, 0.1);
+        world.spawnParticle(Particle.CLOUD, hitLocation, 30, radius, 0.5, radius, 0.05);
+        world.spawnParticle(Particle.ITEM_SNOWBALL, hitLocation, 40, radius, radius, radius, 0.1);
+        
+        // 音效 - 冰冻音效
+        world.playSound(hitLocation, Sound.BLOCK_GLASS_BREAK, 1.0f, 1.5f);
+        world.playSound(hitLocation, Sound.BLOCK_SNOW_BREAK, 1.5f, 0.8f);
+        
+        // 给范围内的所有玩家添加缓慢效果
+        int affected = 0;
+        for (Player nearbyPlayer : world.getPlayers()) {
+            if (nearbyPlayer.getLocation().distance(hitLocation) <= radius) {
+                // 给予缓慢 II 效果，持续 5 秒
+                nearbyPlayer.addPotionEffect(new org.bukkit.potion.PotionEffect(
+                    org.bukkit.potion.PotionEffectType.SLOWNESS,
+                    100, // 5秒（100 ticks）
+                    1, // 缓慢 II
+                    false,
+                    true
+                ));
+                
+                // 额外的冰冻视觉效果
+                nearbyPlayer.getWorld().spawnParticle(
+                    Particle.SNOWFLAKE, 
+                    nearbyPlayer.getLocation().add(0, 1, 0), 
+                    20, 0.3, 0.5, 0.3, 0.05
+                );
+                
+                // 给被冰冻的玩家播放音效
+                nearbyPlayer.playSound(nearbyPlayer.getLocation(), Sound.ENTITY_PLAYER_HURT_FREEZE, 1.0f, 1.0f);
+                
+                affected++;
+            }
+        }
+        
+        // 给投掷者反馈
+        if (affected > 0) {
+            thrower.sendActionBar(Component.text("§b❄ 冰冻爆破！影响 " + affected + " 名玩家"));
+            thrower.playSound(thrower.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.5f);
+        }
     }
     
     /**

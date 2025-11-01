@@ -116,6 +116,12 @@ public class AirdropManager implements Listener {
         
         // 保存信标底座位置的原始方块
         Material originalBlock = beaconBase.getBlock().getType();
+        
+        // 如果原始方块是空气或非固体方块，保存为草方块（避免留下洞）
+        if (!originalBlock.isSolid() || originalBlock == Material.AIR) {
+            originalBlock = Material.GRASS_BLOCK;
+        }
+        
         originalBlocks.put(beaconBase, originalBlock);
         
         beaconBase.getBlock().setType(Material.BEACON);
@@ -232,12 +238,22 @@ public class AirdropManager implements Listener {
             if (airdropChests.contains(chestLoc)) {
                 Player player = (Player) event.getPlayer();
                 
-                // 播报
-                Bukkit.broadcast(Component.text("§6" + player.getName() + " §e打开了空投箱！"));
+                // 给所有玩家显示标题提示
+                for (Player p : Bukkit.getOnlinePlayers()) {
+                    p.sendTitle("§6§l空投被打开！", "§e" + player.getName() + " §7获得了稀有装备", 5, 40, 10);
+                    p.playSound(p.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 1.0f, 1.5f);
+                    p.playSound(p.getLocation(), Sound.BLOCK_CHEST_OPEN, 1.0f, 1.2f);
+                }
                 
-                // 音效
-                player.playSound(player.getLocation(), Sound.BLOCK_CHEST_OPEN, 1.0f, 1.2f);
-                player.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, chestLoc.clone().add(0.5, 1, 0.5), 20, 0.3, 0.3, 0.3, 0.1);
+                // 聊天消息播报
+                Bukkit.broadcast(Component.text("§6§l【空投】§e" + player.getName() + " §7打开了空投箱并获得稀有装备！"));
+                
+                // 特效
+                player.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, chestLoc.clone().add(0.5, 1, 0.5), 30, 0.5, 0.5, 0.5, 0.1);
+                player.getWorld().spawnParticle(Particle.FIREWORK, chestLoc.clone().add(0.5, 1, 0.5), 20, 0.3, 0.3, 0.3, 0.05);
+                
+                // 给打开玩家特别的音效
+                player.playSound(player.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0f, 1.0f);
             }
         }
     }
