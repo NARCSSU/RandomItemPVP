@@ -33,21 +33,30 @@ items:
   interval_ticks: 100    # 物品发放间隔（ticks，100=5秒）
   
   # ==========================================
-  # 物品权重配置（权重越高出现概率越大，未配置的物品默认权重为1）
+  # 物品权重配置（权重越高出现概率越大）
   # ==========================================
-  # 工作原理：
+  # 📌 重要说明：
+  #   - 只有在此配置的物品才会掉落！
+  #   - 要添加新物品，只需添加一行：物品ID: 权重
+  #   - 要移除物品，删除对应行或将权重设为0
+  #
+  # 🔢 权重系统工作原理：
   #   - 权重为10的物品出现概率是权重为1的物品的10倍
   #   - 所有物品的权重加起来形成一个"池子"，每个物品占据对应的比例
-  #   - 即使某个物品权重很高，其他物品仍会出现，只是概率较低
   #
-  # 示例计算：
+  # 📊 示例计算：
   #   假设只有3个物品：A(权重100)、B(权重10)、C(权重1)
   #   总权重 = 111
   #   A的概率 = 100/111 = 90.1%
   #   B的概率 = 10/111 = 9.0%
   #   C的概率 = 1/111 = 0.9%
   #
-  # 建议权重范围：1-20（避免差距过大影响游戏体验）
+  # 💡 如何添加新物品：
+  #   1. 找到物品的英文ID（例如：DIAMOND_SWORD）
+  #   2. 在下方添加：DIAMOND_SWORD: 50
+  #   3. 使用 /ripvp reload 重载配置
+  #
+  # 📝 建议权重范围：1-60（避免差距过大影响游戏体验）
   # ==========================================
   weights:
     # ==========================================
@@ -152,6 +161,41 @@ events:
   delay_min_ticks_final_circle: 200  # 最后一圈最小延迟（ticks，加快频率）
   delay_max_ticks_final_circle: 600  # 最后一圈最大延迟（ticks，加快频率）
   # 说明：当边界缩小到接近最小值时，事件会更频繁触发，增加紧张感
+
+# ==========================================
+# 数据库设置（存储玩家统计数据）
+# ==========================================
+database:
+  # 数据库类型：SQLITE 或 MYSQL
+  type: SQLITE
+  
+  # SQLite 设置（type=SQLITE时使用）
+  sqlite:
+    file: 'plugins/RandomItemPVP/data.db'  # 数据库文件路径
+  
+  # MySQL 设置（type=MYSQL时使用）
+  mysql:
+    host: 'localhost'           # 数据库地址
+    port: 3306                  # 数据库端口
+    database: 'randomitempvp'   # 数据库名
+    username: 'root'            # 用户名
+    password: 'password'        # 密码
+    
+    # 连接参数（高级设置）
+    properties:
+      useSSL: false                     # 是否使用SSL
+      autoReconnect: true               # 自动重连
+      characterEncoding: 'utf8mb4'      # 字符编码（支持emoji）
+      serverTimezone: 'Asia/Shanghai'   # 服务器时区
+      allowPublicKeyRetrieval: true     # 允许公钥检索
+    
+    # 连接池设置（HikariCP）
+    pool:
+      maximum-pool-size: 10             # 最大连接数
+      minimum-idle: 2                   # 最小空闲连接数
+      connection-timeout: 30000         # 连接超时（毫秒）
+      idle-timeout: 600000              # 空闲超时（毫秒）
+      max-lifetime: 1800000             # 最大生命周期（毫秒）
 
 # ==========================================
 # 时间换算参考：
