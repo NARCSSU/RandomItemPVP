@@ -38,9 +38,9 @@ database:
     properties:
       useSSL: false
       autoReconnect: true
-      characterEncoding: 'utf8mb4'
       serverTimezone: 'Asia/Shanghai'
       allowPublicKeyRetrieval: true
+      useTimezone: true
     pool:
       maximum-pool-size: 10
       minimum-idle: 2
@@ -168,8 +168,9 @@ mysql -u ripvp -p randomitempvp < backup.sql
 |------|------|--------|
 | `useSSL` | 是否使用SSL连接 | `false`（本地数据库） |
 | `autoReconnect` | 自动重连 | `true` |
-| `characterEncoding` | 字符编码 | `utf8mb4`（支持emoji） |
 | `serverTimezone` | 服务器时区 | `Asia/Shanghai` |
+| `allowPublicKeyRetrieval` | 允许公钥检索 | `true`（MySQL 8.0+必须） |
+| `useTimezone` | 使用时区 | `true` |
 | `maximum-pool-size` | 最大连接数 | `10` |
 | `minimum-idle` | 最小空闲连接 | `2` |
 
@@ -225,4 +226,5 @@ DELETE FROM player_stats WHERE uuid = '玩家UUID';
 - 使用UUID作为主键，防止玩家改名导致数据丢失
 - 自动更新玩家名称
 - 事务支持（MySQL）
+
 

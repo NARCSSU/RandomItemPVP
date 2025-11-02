@@ -20,6 +20,7 @@ import org.bukkit.util.Vector;
 import org.bukkit.WorldBorder;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 
@@ -27,9 +28,9 @@ public class GameManager implements Listener {
     private final JavaPlugin plugin;
     private final ConfigManager config;
     private final PlayerStatsManager statsManager;
-    private boolean gameRunning = false;
-    private boolean preparing = false; // 准备阶段（倒计时中）
-    private boolean eventTriggered = false;
+    private volatile boolean gameRunning = false;
+    private volatile boolean preparing = false; // 准备阶段（倒计时中）
+    private volatile boolean eventTriggered = false;
     private final Random random = new Random();
     private ScheduledTask itemTask;
     private ScheduledTask eventTask;
@@ -43,11 +44,11 @@ public class GameManager implements Listener {
     private final List<Entity> spawnedMobs = new ArrayList<>();
     private final Map<Player, GameMode> playerGameModes = new HashMap<>();
     private ScheduledTask aliveCountTask;
-    private final Set<Player> participants = new HashSet<>(); // 参与者列表
+    private final Set<Player> participants = ConcurrentHashMap.newKeySet(); // 参与者列表（线程安全）
     private final Map<Player, Location> playerOriginalLocations = new HashMap<>(); // 记录玩家原始位置
     private Location gatherLocation = null; // 集合点位置
     private int lastAliveCount = -1; // 记录上一次的存活人数，用于防止消息刷屏
-    private final Set<Player> alivePlayers = new HashSet<>(); // 存活玩家列表（独立跟踪，不依赖游戏模式）
+    private final Set<Player> alivePlayers = ConcurrentHashMap.newKeySet(); // 存活玩家列表（线程安全）
 
     public GameManager(JavaPlugin plugin, ConfigManager config, PlayerStatsManager statsManager) {
         this.plugin = plugin;
@@ -74,7 +75,7 @@ public class GameManager implements Listener {
         config.saveSpawnLocation(location);
     }
     public void reloadSpawnLocation() {
-        Location newSpawn = config.loadSpawnLocation();
+        Location newSpawn = config.loadSpawnLocation(true);  // reload 时显示日志
         if (newSpawn != null) {
             this.spawnLocation = newSpawn;
         }
@@ -1113,7 +1114,7 @@ public class GameManager implements Listener {
         player.setGameMode(GameMode.SPECTATOR);
         player.sendMessage("§c你已死亡！切换为旁观者模式，等待下一轮。");
         
-        // 记录死亡统计
+        // 记录死亡统计（包括失败和场次）
         statsManager.recordDeath(player);
         
         // 如果是被玩家击杀，记录击杀者的击杀统计
@@ -1122,21 +1123,22 @@ public class GameManager implements Listener {
             statsManager.recordKill(killer);
         }
         
+        // 记录失败统计（死亡=失败）
+        statsManager.recordLoss(player);
+        
         // 重新获取存活玩家列表
         List<Player> survivors = getSurvivingPlayers();
         
         if (survivors.size() == 1) {
             Player winner = survivors.get(0);
             
+            // 立即停止游戏，防止后续死亡事件被记录
+            gameRunning = false;
+            
             // 记录胜利者的胜利
             statsManager.recordWin(winner);
             
-            // 记录其他参与者的失败
-            for (Player participant : participants) {
-                if (participant != winner && participant.isOnline()) {
-                    statsManager.recordLoss(participant);
-                }
-            }
+            // 不要重复记录失败（死亡时已经记录过了）
             
             // 使用标题显示胜利消息
             for (Player p : Bukkit.getOnlinePlayers()) {
@@ -1149,22 +1151,20 @@ public class GameManager implements Listener {
             Bukkit.broadcastMessage("§6" + winner.getName() + " §e赢得了本局比赛！");
             Bukkit.broadcastMessage("§7使用 /ripvp start 开始下一局");
             
-            // 延迟5秒后结束游戏
+            // 延迟5秒后结束游戏（清理现场）
             Bukkit.getGlobalRegionScheduler().runDelayed(plugin, task -> {
                 stopGame(false);
             }, 100L);
         } else if (survivors.isEmpty()) {
-            // 所有人都死了，记录所有参与者的失败
-            for (Player participant : participants) {
-                if (participant.isOnline()) {
-                    statsManager.recordLoss(participant);
-                }
-            }
+            // 立即停止游戏，防止后续死亡事件被记录
+            gameRunning = false;
+            
+            // 所有人都死了（死亡时已经记录过了，不需要重复记录）
             
             Bukkit.broadcastMessage("§c所有玩家已死亡！游戏结束。");
             Bukkit.broadcastMessage("§7使用 /ripvp start 开始下一局");
             
-            // 延迟5秒后结束游戏
+            // 延迟5秒后结束游戏（清理现场）
             Bukkit.getGlobalRegionScheduler().runDelayed(plugin, task -> {
                 stopGame(false);
             }, 100L);
@@ -1217,15 +1217,13 @@ public class GameManager implements Listener {
             if (survivors.size() == 1) {
                 Player winner = survivors.get(0);
                 
+                // 立即停止游戏，防止后续事件被记录
+                gameRunning = false;
+                
                 // 记录胜利者的胜利
                 statsManager.recordWin(winner);
                 
-                // 记录其他参与者的失败
-                for (Player participant : participants) {
-                    if (participant != winner && participant != player && participant.isOnline()) {
-                        statsManager.recordLoss(participant);
-                    }
-                }
+                // 不要重复记录失败（死亡/离线时已经记录过了）
                 
                 // 使用标题显示胜利消息
                 for (Player p : Bukkit.getOnlinePlayers()) {
@@ -1238,22 +1236,20 @@ public class GameManager implements Listener {
                 Bukkit.broadcastMessage("§6" + winner.getName() + " §e赢得了本局比赛！");
                 Bukkit.broadcastMessage("§7使用 /ripvp start 开始下一局");
                 
-                // 延迟5秒后结束游戏
+                // 延迟5秒后结束游戏（清理现场）
                 Bukkit.getGlobalRegionScheduler().runDelayed(plugin, task -> {
                     stopGame(false);
                 }, 100L);
             } else if (survivors.isEmpty()) {
-                // 所有人都退出了，记录所有在线参与者的失败
-                for (Player participant : participants) {
-                    if (participant != player && participant.isOnline()) {
-                        statsManager.recordLoss(participant);
-                    }
-                }
+                // 立即停止游戏，防止后续事件被记录
+                gameRunning = false;
+                
+                // 所有人都退出了（离线时已经记录过了，不需要重复记录）
                 
                 Bukkit.broadcastMessage("§c所有玩家已离开或死亡！游戏结束。");
                 Bukkit.broadcastMessage("§7使用 /ripvp start 开始下一局");
                 
-                // 延迟5秒后结束游戏
+                // 延迟5秒后结束游戏（清理现场）
                 Bukkit.getGlobalRegionScheduler().runDelayed(plugin, task -> {
                     stopGame(false);
                 }, 100L);

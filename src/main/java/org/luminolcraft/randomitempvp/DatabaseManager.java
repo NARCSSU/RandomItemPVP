@@ -110,14 +110,18 @@ public class DatabaseManager {
         StringBuilder propertiesBuilder = new StringBuilder();
         ConfigurationSection properties = mysqlConfig.getConfigurationSection("properties");
         if (properties != null) {
+            boolean first = true;
             for (String key : properties.getKeys(false)) {
                 Object value = properties.get(key);
-                propertiesBuilder.append("&").append(key).append("=").append(value);
+                propertiesBuilder.append(first ? "" : "&").append(key).append("=").append(value);
+                first = false;
             }
         }
         
-        String jdbcUrl = String.format("jdbc:mysql://%s:%d/%s?%s", 
-            host, port, database, propertiesBuilder.toString());
+        String jdbcUrl = String.format("jdbc:mysql://%s:%d/%s%s%s", 
+            host, port, database, 
+            propertiesBuilder.length() > 0 ? "?" : "",
+            propertiesBuilder.toString());
         
         HikariConfig hikariConfig = new HikariConfig();
         hikariConfig.setPoolName("RandomItemPVP-MySQL");

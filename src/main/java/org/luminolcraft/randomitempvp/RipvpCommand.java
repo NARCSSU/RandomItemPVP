@@ -125,11 +125,19 @@ public class RipvpCommand implements CommandExecutor, TabCompleter {
                         return true;
                     }
                     
-                    // 热加载配置
+                    // 热加载配置并显示详细信息
                     configManager.reloadConfig();
                     gameManager.reloadSpawnLocation();
+                    
+                    // 显示配置信息
                     player.sendMessage(ChatColor.GREEN + "✓ 配置文件已热加载！");
-                    player.sendMessage(ChatColor.GREEN + "✓ 游戏出生点已重新加载！");
+                    player.sendMessage(ChatColor.AQUA + "当前配置：");
+                    player.sendMessage(ChatColor.WHITE + "  - 竞技场半径: " + ChatColor.YELLOW + configManager.getArenaRadius());
+                    player.sendMessage(ChatColor.WHITE + "  - 最少玩家数: " + ChatColor.YELLOW + configManager.getMinPlayers());
+                    player.sendMessage(ChatColor.WHITE + "  - 倒计时时长: " + ChatColor.YELLOW + configManager.getStartCountdown() + "秒");
+                    player.sendMessage(ChatColor.WHITE + "  - 边界伤害: " + ChatColor.YELLOW + configManager.getBorderDamageAmount() + "/秒");
+                    player.sendMessage(ChatColor.WHITE + "  - 物品发放间隔: " + ChatColor.YELLOW + (configManager.getItemInterval() / 20.0) + "秒");
+                    player.sendMessage(ChatColor.WHITE + "  - 缩圈间隔: " + ChatColor.YELLOW + (configManager.getShrinkInterval() / 20.0) + "秒");
                     player.sendMessage(ChatColor.YELLOW + "新配置已生效，可以开始新游戏。");
                     return true;
                 

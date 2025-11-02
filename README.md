@@ -8,7 +8,7 @@
 [![Server](https://img.shields.io/badge/Server-Paper%20%7C%20Folia-blue.svg)](https://papermc.io/)
 [![Folia](https://img.shields.io/badge/Folia-Supported-purple.svg)](https://papermc.io/software/folia)
 [![Java](https://img.shields.io/badge/Java-21-orange.svg)](https://www.oracle.com/java/)
-[![Version](https://img.shields.io/badge/Version-2.2.0-red.svg)](https://github.com/yourusername/RandomItemPVP/releases/tag/v2.2.0)
+[![Version](https://img.shields.io/badge/Version-3.0.0-red.svg)](https://github.com/yourusername/RandomItemPVP/releases/tag/v3.0.0)
 
 </div>
 
@@ -35,12 +35,6 @@
 ## 🎮 简介
 
 **RandomItemPVP** 是一款专为 Paper/Folia 1.21+ 设计的大逃杀类小游戏插件，完全支持 Folia 多线程架构。玩家将在不断缩小的边界内战斗，通过随机获得的物品和特殊能力来争夺最后的胜利！
-
-### 🆕 v2.2.0 新功能
-- **🗃️ 数据库统计系统**：支持 SQLite/MySQL，记录玩家完整战绩
-- **📊 PlaceholderAPI 集成**：17+ 变量支持，显示玩家统计数据
-- **🏆 排行榜系统**：胜利/击杀/KD 排行榜
-- **⚡ 性能优化**：查询速度提升 600 倍，修复死锁问题
 
 ### 🌟 为什么选择 RandomItemPVP？
 
@@ -382,8 +376,8 @@ database:
     username: 'root'
     password: 'password'
     properties:
-      characterEncoding: 'utf8mb4'
       serverTimezone: 'Asia/Shanghai'
+      allowPublicKeyRetrieval: true
     pool:
       maximum-pool-size: 10
 ```
@@ -963,8 +957,8 @@ public void onPlayerKill(Player killer, Player victim) {
 ## 📞 联系方式
 
 - **Issues**: [GitHub Issues](https://github.com/yourusername/RandomItemPVP/issues)
-- **Discord**: [加入我们的Discord](https://discord.gg/yourserver)
-- **Email**: your.email@example.com
+<!-- - **Discord**: [加入我们的Discord](https://discord.gg/yourserver) -->
+<!-- - **Email**: your.email@example.com -->
 
 ---
 
@@ -972,6 +966,6 @@ public void onPlayerKill(Player killer, Player victim) {
 
 **如果这个项目对你有帮助，请给个 ⭐ Star！**
 
-Made with ❤️ by [Your Name]
+Made with ❤️ by [Narcssu-Cursor]
 
 </div>

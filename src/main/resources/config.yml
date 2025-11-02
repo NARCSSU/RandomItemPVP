@@ -185,9 +185,9 @@ database:
     properties:
       useSSL: false                     # 是否使用SSL
       autoReconnect: true               # 自动重连
-      characterEncoding: 'utf8mb4'      # 字符编码（支持emoji）
       serverTimezone: 'Asia/Shanghai'   # 服务器时区
-      allowPublicKeyRetrieval: true     # 允许公钥检索
+      allowPublicKeyRetrieval: true     # 允许公钥检索（MySQL 8.0+必须）
+      useTimezone: true                 # 使用时区
     
     # 连接池设置（HikariCP）
     pool:

@@ -128,6 +128,15 @@ public class ConfigManager {
      * @return 出生点位置，如果未配置或世界不存在则返回null
      */
     public Location loadSpawnLocation() {
+        return loadSpawnLocation(false);
+    }
+    
+    /**
+     * 从配置文件加载游戏出生点
+     * @param showLog 是否显示日志
+     * @return 出生点位置，如果未配置或世界不存在则返回null
+     */
+    public Location loadSpawnLocation(boolean showLog) {
         if (!config.contains("arena.spawn.world")) {
             return null;
         }
@@ -147,9 +156,12 @@ public class ConfigManager {
         float pitch = (float) config.getDouble("arena.spawn.pitch", 0.0);
         
         Location location = new Location(world, x, y, z, yaw, pitch);
-        plugin.getLogger().info("从配置文件加载游戏出生点：" + 
-            String.format("世界=%s, 坐标=(%.1f, %.1f, %.1f)", 
-            worldName, x, y, z));
+        
+        if (showLog) {
+            plugin.getLogger().info("从配置文件加载游戏出生点：" + 
+                String.format("世界=%s, 坐标=(%.1f, %.1f, %.1f)", 
+                worldName, x, y, z));
+        }
         
         return location;
     }
