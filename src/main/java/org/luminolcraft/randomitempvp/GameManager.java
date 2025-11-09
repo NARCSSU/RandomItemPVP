@@ -1098,8 +1098,26 @@ public class GameManager implements Listener {
 
     @EventHandler
     public void onPlayerDeath(PlayerDeathEvent event) {
-        if (!gameRunning) return;
         Player player = event.getEntity();
+        
+        // 优先检查多房间系统
+        if (this.plugin instanceof RandomItemPVP) {
+            ArenaManager arenaManager = ((RandomItemPVP) this.plugin).getArenaManager();
+            if (arenaManager != null && arenaManager.isPlayerInArena(player)) {
+                String arenaName = arenaManager.getPlayerArena(player);
+                if (arenaName != null) {
+                    GameArena playerArena = arenaManager.getArena(arenaName);
+                    if (playerArena != null && playerArena.getGameInstance().isRunning()) {
+                        // 玩家在多房间系统中，由 GameInstance 处理
+                        playerArena.getGameInstance().onPlayerDeath(event);
+                        return;
+                    }
+                }
+            }
+        }
+        
+        // 单房间系统逻辑（向后兼容）
+        if (!gameRunning) return;
         
         // 从存活玩家列表中移除
         alivePlayers.remove(player);
@@ -1174,6 +1192,167 @@ public class GameManager implements Listener {
     @EventHandler
     public void onPlayerJoin(PlayerJoinEvent event) {
         Player player = event.getPlayer();
+        
+        // 检查是否在多房间系统中（通过 ArenaManager 检查）
+        // 如果多房间系统中有房间在运行，说明使用的是多房间系统，不应该使用旧的单房间逻辑
+        if (this.plugin instanceof RandomItemPVP) {
+            ArenaManager arenaManager = ((RandomItemPVP) this.plugin).getArenaManager();
+            if (arenaManager != null) {
+                // 检查玩家是否在某个房间中
+                if (arenaManager.isPlayerInArena(player)) {
+                    String arenaName = arenaManager.getPlayerArena(player);
+                    GameArena arena = arenaManager.getArena(arenaName);
+                    if (arena != null) {
+                        GameInstance instance = arena.getGameInstance();
+                        
+                        // 检查游戏是否已结束（房间状态为 WAITING 且游戏不在运行）
+                        if (!arena.isRunning() && !arena.isPreparing() && arena.getStatus() == GameArena.ArenaStatus.WAITING) {
+                            // 游戏已结束，检查玩家是否在已删除的世界中
+                            String instanceWorldKey = arena.getInstanceWorldKey();
+                            if (instanceWorldKey != null && config.isWorldInstancingEnabled()) {
+                                World instanceWorld = WorldsIntegration.loadWorld(instanceWorldKey);
+                                if (instanceWorld != null && player.getWorld().equals(instanceWorld)) {
+                                    // 玩家在已结束的游戏世界中，传送离开
+                                    Location lobbyLocation = config.loadLobbyLocation();
+                                    if (lobbyLocation != null && config.isLobbyEnabled()) {
+                                        Location safeLobby = findSafeLocationForPlayer(player, lobbyLocation);
+                                        if (safeLobby != null) {
+                                            player.teleportAsync(safeLobby).thenRun(() -> {
+                                                player.sendMessage("§e游戏已结束，已传送回大厅！");
+                                            });
+                                        } else {
+                                            // 如果找不到安全位置，直接使用大厅位置
+                                            player.teleportAsync(lobbyLocation).thenRun(() -> {
+                                                player.sendMessage("§e游戏已结束，已传送回大厅！");
+                                            });
+                                        }
+                                    } else {
+                                        // 没有大厅，传送到世界出生点
+                                        Location worldSpawn = Bukkit.getWorlds().get(0).getSpawnLocation();
+                                        player.teleportAsync(worldSpawn).thenRun(() -> {
+                                            player.sendMessage("§e游戏已结束，已传送到世界出生点！");
+                                        });
+                                    }
+                                    // 清除玩家在房间中的记录
+                                    arenaManager.removePlayerFromArena(player);
+                                    instance.getParticipants().remove(player);
+                                    return;
+                                }
+                            }
+                            
+                            // 房间等待中，玩家可以继续在房间中
+                            player.sendMessage("§a欢迎回来！你仍在房间 '" + arenaName + "' 中。");
+                            player.sendMessage("§7使用 /ripvp join " + arenaName + " 重新加入");
+                            return;
+                        }
+                        
+                        // 如果游戏正在运行或准备中
+                        if (arena.isRunning() || arena.isPreparing()) {
+                            // 玩家之前在房间中，但游戏已开始或准备中
+                            // 检查玩家是否在参与者列表中
+                            if (instance.getParticipants().contains(player)) {
+                                // 玩家是参与者
+                                if (arena.isRunning()) {
+                                    // 游戏运行中，玩家应该作为旁观者或恢复游戏状态
+                                    // 但玩家已经离开服务器了，所以不应该自动重新加入游戏
+                                    // 清除玩家在房间中的记录，让玩家重新选择
+                                    arenaManager.leaveArena(player);
+                                    player.sendMessage("§e你在游戏进行中离开，已自动退出房间！");
+                                    player.sendMessage("§a使用 /ripvp list 查看可用房间。");
+                                    
+                                    // 如果玩家在游戏世界中，传送离开
+                                    Location lobbyLocation = config.loadLobbyLocation();
+                                    if (lobbyLocation != null && config.isLobbyEnabled()) {
+                                        Location safeLobby = findSafeLocationForPlayer(player, lobbyLocation);
+                                        if (safeLobby != null) {
+                                            player.teleportAsync(safeLobby).thenRun(() -> {
+                                                player.sendMessage("§e已传送回大厅！");
+                                            });
+                                        } else {
+                                            // 如果找不到安全位置，直接使用大厅位置
+                                            player.teleportAsync(lobbyLocation).thenRun(() -> {
+                                                player.sendMessage("§e已传送回大厅！");
+                                            });
+                                        }
+                                    } else {
+                                        // 没有大厅，传送到世界出生点
+                                        Location worldSpawn = Bukkit.getWorlds().get(0).getSpawnLocation();
+                                        player.teleportAsync(worldSpawn).thenRun(() -> {
+                                            player.sendMessage("§e已传送到世界出生点！");
+                                        });
+                                    }
+                                } else {
+                                    // 游戏准备中，玩家可以继续参与
+                                    // 传送到集合点
+                                    Location gatherLoc = instance.getPlayerOriginalLocation(player);
+                                    if (gatherLoc == null) {
+                                        gatherLoc = arena.getSpawnLocation();
+                                    }
+                                    if (gatherLoc != null) {
+                                        player.teleportAsync(gatherLoc).thenRun(() -> {
+                                            player.sendMessage("§a欢迎回来！你仍在房间 '" + arenaName + "' 的准备中。");
+                                        });
+                                    }
+                                }
+                            } else {
+                                // 玩家不在参与者列表中，但在房间映射中（可能是上次残留）
+                                // 清除记录
+                                arenaManager.leaveArena(player);
+                                player.sendMessage("§a随机物品PVP插件已加载！使用 /ripvp list 查看可用房间。");
+                            }
+                            return;
+                        }
+                    }
+                }
+                
+                // 检查是否有任何房间在运行或准备中
+                Collection<GameArena> arenas = arenaManager.getArenas();
+                boolean anyRoomActive = false;
+                for (GameArena arena : arenas) {
+                    if (arena.isRunning() || arena.isPreparing()) {
+                        anyRoomActive = true;
+                        break;
+                    }
+                }
+                
+                // 如果有房间在运行或准备中，检查玩家是否在游戏区域内（作为观战者）
+                if (anyRoomActive) {
+                    // 检查玩家是否在某个游戏区域内（但不在参与者列表中）
+                    for (GameArena arena : arenas) {
+                        if ((arena.isRunning() || arena.isPreparing()) && !arenaManager.isPlayerInArena(player)) {
+                            Location playerLoc = player.getLocation();
+                            Location arenaSpawn = arena.getSpawnLocation();
+                            
+                            // 检查玩家是否在游戏区域内（使用竞技场半径）
+                            if (arenaSpawn != null && playerLoc.getWorld().equals(arenaSpawn.getWorld())) {
+                                double distance = playerLoc.distance(arenaSpawn);
+                                int radius = config.getArenaRadius();
+                                
+                                // 如果玩家在游戏区域内，设置为观战者
+                                if (distance <= radius * 2) { // 使用 2 倍半径作为检测范围
+                                    GameInstance instance = arena.getGameInstance();
+                                    
+                                    // 保存观战者的物品和游戏模式
+                                    if (!instance.isSpectator(player)) {
+                                        instance.addSpectator(player);
+                                        player.setGameMode(GameMode.SPECTATOR);
+                                        player.sendMessage("§e你进入了游戏区域！已切换为观战模式。");
+                                        player.sendMessage("§7游戏结束后会自动恢复。");
+                                    }
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                    
+                    // 不在游戏区域内，不自动处理，让玩家自己选择加入房间
+                    player.sendMessage("§a随机物品PVP插件已加载！使用 /ripvp list 查看可用房间。");
+                    return;
+                }
+            }
+        }
+        
+        // 旧的单房间系统逻辑（兼容性）
         if (gameRunning) {
             // 检查玩家是否是存活的参与者
             if (alivePlayers.contains(player)) {
@@ -1201,8 +1380,26 @@ public class GameManager implements Listener {
     
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
-        if (!gameRunning) return;
         Player player = event.getPlayer();
+        
+        // 优先检查多房间系统
+        if (this.plugin instanceof RandomItemPVP) {
+            ArenaManager arenaManager = ((RandomItemPVP) this.plugin).getArenaManager();
+            if (arenaManager != null && arenaManager.isPlayerInArena(player)) {
+                String arenaName = arenaManager.getPlayerArena(player);
+                if (arenaName != null) {
+                    GameArena playerArena = arenaManager.getArena(arenaName);
+                    if (playerArena != null && playerArena.getGameInstance().isRunning()) {
+                        // 玩家在多房间系统中，由 GameInstance 处理
+                        playerArena.getGameInstance().onPlayerQuit(event);
+                        return;
+                    }
+                }
+            }
+        }
+        
+        // 单房间系统逻辑（向后兼容）
+        if (!gameRunning) return;
         
         // 如果玩家是存活参与者，从存活列表中移除
         if (alivePlayers.contains(player)) {
@@ -1259,8 +1456,46 @@ public class GameManager implements Listener {
     
     @EventHandler
     public void onPlayerRespawn(PlayerRespawnEvent event) {
-        if (!gameRunning) return;
         Player player = event.getPlayer();
+        
+        // 检查是否在多房间系统中
+        if (this.plugin instanceof RandomItemPVP) {
+            ArenaManager arenaManager = ((RandomItemPVP) this.plugin).getArenaManager();
+            if (arenaManager != null && arenaManager.isPlayerInArena(player)) {
+                GameArena playerArena = arenaManager.getArena(arenaManager.getPlayerArena(player));
+                if (playerArena != null && playerArena.getGameInstance().isRunning()) {
+                    GameInstance instance = playerArena.getGameInstance();
+                    
+                    // 检查玩家是否是参与者
+                    if (instance.getParticipants().contains(player)) {
+                        // 检查玩家是否还在存活列表中
+                        List<Player> survivors = instance.getSurvivingPlayers();
+                        if (!survivors.contains(player)) {
+                            // 玩家已死亡，使用实体调度器强制设置为旁观者模式
+                            player.getScheduler().run(plugin, task -> {
+                                player.setGameMode(GameMode.SPECTATOR);
+                                player.sendMessage("§c你已死亡！切换为旁观者模式，等待下一轮。");
+                                
+                                // 传送到出生点
+                                Location spawnLoc = playerArena.getSpawnLocation();
+                                if (spawnLoc != null) {
+                                    player.teleportAsync(spawnLoc);
+                                }
+                            }, null);
+                        }
+                    } else if (instance.isSpectator(player)) {
+                        // 玩家是观战者，保持旁观者模式
+                        player.getScheduler().run(plugin, task -> {
+                            player.setGameMode(GameMode.SPECTATOR);
+                        }, null);
+                    }
+                    return;
+                }
+            }
+        }
+        
+        // 旧的单房间系统逻辑（兼容性）
+        if (!gameRunning) return;
         
         // 检查玩家是否是参与者
         if (participants.contains(player)) {
@@ -1369,6 +1604,51 @@ public class GameManager implements Listener {
                 }
             }
         }
+    }
+    
+    /**
+     * 查找玩家的安全位置（用于传送）
+     * @param player 玩家
+     * @param targetLocation 目标位置
+     * @return 安全的位置，如果找不到则返回null
+     */
+    private Location findSafeLocationForPlayer(Player player, Location targetLocation) {
+        if (targetLocation == null || targetLocation.getWorld() == null) {
+            return null;
+        }
+        
+        World world = targetLocation.getWorld();
+        int x = targetLocation.getBlockX();
+        int y = targetLocation.getBlockY();
+        int z = targetLocation.getBlockZ();
+        
+        // 检查Y坐标是否有效
+        if (y < world.getMinHeight() || y >= world.getMaxHeight()) {
+            y = world.getHighestBlockYAt(x, z);
+            if (y < world.getMinHeight()) {
+                y = world.getMinHeight() + 1;
+            }
+        }
+        
+        // 确保不在虚空
+        while (y > world.getMinHeight() && world.getBlockAt(x, y, z).getType() == Material.AIR) {
+            y--;
+        }
+        
+        // 如果Y坐标仍然无效，使用世界出生点的高度
+        if (y < world.getMinHeight()) {
+            y = Math.max(world.getMinHeight() + 1, world.getSpawnLocation().getBlockY());
+        }
+        
+        // 确保Y坐标是安全的高度（站在方块上）
+        int safeY = world.getHighestBlockYAt(x, z);
+        if (safeY < world.getMinHeight()) {
+            safeY = world.getMinHeight() + 1;
+        }
+        safeY = Math.max(safeY, y);
+        
+        return new Location(world, x + 0.5, safeY + 1, z + 0.5, 
+            targetLocation.getYaw(), targetLocation.getPitch());
     }
 }
 

@@ -1,0 +1,57 @@
+# ==========================================
+# RandomItemPVP - 地图配置模块
+# ==========================================
+# 此文件包含所有地图的配置
+# 如果启用模块化配置，此文件会覆盖主配置文件中的地图设置
+# ==========================================
+
+# 地图列表（每个地图定义不同的出生点和配置）
+# 注意：Worlds 插件是必需依赖！必须使用 Worlds 插件的世界 key（如 arena1）
+#       如果启用了 world-instancing.enabled，每个房间会自动从模板世界克隆创建独立的世界实例
+#       游戏结束后会自动删除或重置世界实例（根据 auto-cleanup 设置）
+# 每个地图可以有自己的配置（radius, min-players 等），如果未设置则使用全局配置
+map1:
+  name: '地图1'        # 地图显示名称
+  world: 'world'      # Worlds 插件的世界 key（必需）
+  x: 0.0              # X坐标
+  y: 64.0             # Y坐标
+  z: 0.0              # Z坐标
+  yaw: 0.0            # 视角偏航角
+  pitch: 0.0          # 视角俯仰角
+  # 地图特定配置（可选，未设置则使用全局配置）
+  radius: 50          # 初始边界半径（格）
+  min-players: 2      # 最少玩家数才能开始
+  start-countdown: 15 # 准备倒计时（秒）
+  auto-start-delay: 5 # 达到最少玩家数后，延迟几秒再开始倒计时（秒，0=立即开始）
+  vote-duration: 15   # 地图投票持续时间（秒）
+
+map2:
+  name: '地图2'
+  world: 'world'      # Worlds 插件的世界 key（必需）
+  x: 100.0
+  y: 64.0
+  z: 100.0
+  yaw: 0.0
+  pitch: 0.0
+  # 地图特定配置（可选，未设置则使用全局配置）
+  radius: 48
+  min-players: 2
+  start-countdown: 30
+  auto-start-delay: 5
+  vote-duration: 15
+
+map3:
+  name: '地图3'
+  world: 'world'      # Worlds 插件的世界 key（必需）
+  x: -100.0
+  y: 64.0
+  z: -100.0
+  yaw: 0.0
+  pitch: 0.0
+  # 地图特定配置（可选，未设置则使用全局配置）
+  radius: 50
+  min-players: 2
+  start-countdown: 15
+  auto-start-delay: 5
+  vote-duration: 15
+
